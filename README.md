@@ -7,7 +7,7 @@
 [![Delta Lake](https://img.shields.io/badge/Delta_Lake-00AEEF?style=for-the-badge&logo=delta&logoColor=white)](https://delta.io/)
 
 **Watch the full project walkthrough and live Kafka streaming demonstration here:**
-▶️ **[Insert Link to your unlisted YouTube Video Demo Here]**
+▶️ **[https://youtu.be/oKfjM99Lluw]**
 
 ## Project Overview
 This project is an end-to-end data engineering pipeline built on **Databricks** utilizing the **Medallion Architecture (Bronze, Silver, Gold)**. It is designed to process simulated real-time financial telemetry, specifically handling complex data scenarios like live Kafka streaming, slowly changing customer dimensions (SCD), and spatial-temporal fraud math.
