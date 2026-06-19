@@ -1,0 +1,1236 @@
+{
+  "datasets": [
+    {
+      "name": "e62caab5",
+      "displayName": "Live KPIs",
+      "queryLines": [
+        "-- Live Fraud KPI Cards (refresh: 30 sec)\r\n",
+        "\r\n",
+        "SELECT\r\n",
+        "    COUNT(*)                                            AS total_transactions_today,\r\n",
+        "    SUM(CASE WHEN is_fraud THEN 1 ELSE 0 END)           AS fraud_transactions_today,\r\n",
+        "    ROUND(\r\n",
+        "        SUM(CASE WHEN is_fraud THEN 1 ELSE 0 END) * 1.0 / NULLIF(COUNT(*), 0),\r\n",
+        "        4\r\n",
+        "    )                                                   AS fraud_rate_pct,\r\n",
+        "    SUM(CASE WHEN is_fraud THEN amount ELSE 0 END)      AS fraud_amount_inr,\r\n",
+        "    SUM(amount)                                         AS total_volume_inr,\r\n",
+        "    COUNT(DISTINCT CASE WHEN is_fraud THEN customer_id END) AS unique_fraud_customers\r\n",
+        "FROM fintech_fraud.silver.silver_transactions_unified\r\n",
+        "WHERE event_timestamp >= CURRENT_TIMESTAMP() - INTERVAL 30 DAYS;"
+      ]
+    },
+    {
+      "name": "bf65ce4a",
+      "displayName": "Minutely Trend",
+      "queryLines": [
+        "SELECT\r\n",
+        "    DATE_FORMAT(event_timestamp, 'HH:mm')             AS txn_minute,\r\n",
+        "    COUNT(*)                                          AS total_txns,\r\n",
+        "    SUM(CASE WHEN is_fraud THEN 1 ELSE 0 END)         AS fraud_txns\r\n",
+        "FROM fintech_fraud.silver.silver_transactions_cleaned\r\n",
+        "WHERE event_timestamp >= CURRENT_TIMESTAMP() - INTERVAL 30 DAYS\r\n",
+        "GROUP BY DATE_FORMAT(event_timestamp, 'HH:mm')\r\n",
+        "ORDER BY txn_minute;"
+      ]
+    },
+    {
+      "name": "79476e1e",
+      "displayName": "Fraud by Type",
+      "queryLines": [
+        "-- Fraud by Type (Pie/Donut)\r\n",
+        "SELECT\r\n",
+        "    COALESCE(fraud_type, 'UNKNOWN') AS fraud_type,\r\n",
+        "    COUNT(*)                        AS fraud_count,\r\n",
+        "    SUM(amount)                     AS total_fraud_amount,\r\n",
+        "    ROUND(AVG(fraud_score), 3)      AS avg_confidence_score\r\n",
+        "FROM fintech_fraud.silver.silver_transactions_unified\r\n",
+        "WHERE is_fraud = true\r\n",
+        "  AND event_timestamp >= CURRENT_TIMESTAMP() - INTERVAL 30 DAYS\r\n",
+        "GROUP BY fraud_type\r\n",
+        "ORDER BY fraud_count DESC;"
+      ]
+    },
+    {
+      "name": "fbb40620",
+      "displayName": "Live Alert Feed",
+      "queryLines": [
+        "-- Live Alert Feed (refresh: 30 sec)\r\n",
+        "SELECT\r\n",
+        "    DATE_FORMAT(alert_generated_at, 'yyyy-MM-dd hh:mm:ss a') AS `Alert Time`,\r\n",
+        "    alert_severity                                           AS `Severity`,\r\n",
+        "    customer_id                                              AS `Customer ID`,\r\n",
+        "    fraud_type                                               AS `Trigger Rule`,\r\n",
+        "    ROUND(amount, 2)                                         AS `Amount (₹)`,\r\n",
+        "    fraud_score                                              AS `Confidence (%)`,\r\n",
+        "    location_city                                            AS `City`\r\n",
+        "FROM fintech_fraud.gold.gold_fraud_alerts_live\r\n",
+        "ORDER BY alert_generated_at DESC\r\n",
+        "LIMIT 50;"
+      ]
+    },
+    {
+      "name": "bca0ee8d",
+      "displayName": "Impossible Travel Detections",
+      "queryLines": [
+        "SELECT\r\n",
+        "    DATE_FORMAT(detected_at, 'hh:mm:ss a')    AS `Detected`,\r\n",
+        "    customer_id                               AS `Compromised User`,\r\n",
+        "    CONCAT(from_city, ' → ', to_city)         AS `Travel Route`,\r\n",
+        "    ROUND(time_gap_hours * 60, 0)             AS `Minutes Elapsed`,\r\n",
+        "    ROUND(distance_km, 0)                     AS `Distance (km)`,\r\n",
+        "    ROUND(implied_speed_kmh, 0)               AS `Implied Speed (km/h)`,\r\n",
+        "    impossible_travel_score                   AS `Confidence (%)`\r\n",
+        "FROM fintech_fraud.gold.gold_impossible_travel\r\n",
+        "WHERE implied_speed_kmh > 900 \r\n",
+        "ORDER BY detected_at DESC\r\n",
+        "LIMIT 20;"
+      ]
+    },
+    {
+      "name": "8047fee1",
+      "displayName": "The Geographic Fraud Map",
+      "queryLines": [
+        "SELECT\r\n",
+        "    CASE \r\n",
+        "        WHEN location_city = 'Bangalore' THEN 'Bengaluru Urban'\r\n",
+        "        WHEN location_city = 'Mumbai'    THEN 'Mumbai City'\r\n",
+        "        WHEN location_city = 'Delhi'     THEN 'New Delhi'\r\n",
+        "        ELSE location_city \r\n",
+        "    END                                               AS mapped_city,\r\n",
+        "    COUNT(*)                                          AS total_txns,\r\n",
+        "    SUM(CASE WHEN is_fraud THEN 1 ELSE 0 END)         AS fraud_count,\r\n",
+        "    SUM(CASE WHEN is_fraud THEN amount ELSE 0 END)    AS fraud_exposure_inr\r\n",
+        "FROM fintech_fraud.silver.silver_transactions_unified\r\n",
+        "WHERE event_timestamp >= CURRENT_TIMESTAMP() - INTERVAL 7 DAYS\r\n",
+        "GROUP BY mapped_city\r\n",
+        "ORDER BY fraud_count DESC\r\n",
+        "LIMIT 20;"
+      ]
+    },
+    {
+      "name": "21b40f45",
+      "displayName": "SLA Tracker",
+      "queryLines": [
+        "SELECT\r\n",
+        "    CASE layer_table \r\n",
+        "        WHEN 'bronze_transactions' THEN '1. Bronze (Raw Ingestion)'\r\n",
+        "        WHEN 'silver_transactions' THEN '2. Silver (Cleaned CDC)'\r\n",
+        "        WHEN 'gold_fraud_alerts'   THEN '3. Gold (Alerts Target)'\r\n",
+        "        ELSE layer_table\r\n",
+        "    END                                          AS `Processing Layer`,\r\n",
+        "    row_count                                    AS `Total Records`,\r\n",
+        "    DATE_FORMAT(newest_record, 'hh:mm:ss a')     AS `Last Record Arrived`,\r\n",
+        "    lag_minutes                                  AS `Current Lag (Minutes)`\r\n",
+        "FROM fintech_fraud.gold.pipeline_health_metrics "
+      ]
+    },
+    {
+      "name": "754208b8",
+      "displayName": "System Health Status",
+      "queryLines": [
+        "SELECT\r\n",
+        "    CASE\r\n",
+        "        WHEN MAX(lag_minutes) > 15 THEN 'CRITICAL ALERT'\r\n",
+        "        WHEN MAX(lag_minutes) > 5  THEN 'WARNING: SLOW'\r\n",
+        "        ELSE 'SYSTEM HEALTHY'\r\n",
+        "    END AS `Overall Status`\r\n",
+        "FROM fintech_fraud.gold.pipeline_health_metrics;"
+      ]
+    },
+    {
+      "name": "4532aee7",
+      "displayName": "Throughput Volume",
+      "queryLines": [
+        "SELECT\r\n",
+        "    MAX(row_count) AS `Total Ingested Events`\r\n",
+        "FROM fintech_fraud.gold.pipeline_health_metrics\r\n",
+        "WHERE layer_table = 'bronze_transactions';"
+      ]
+    },
+    {
+      "name": "6bc30ed3",
+      "displayName": "Anomaly Detection Stats",
+      "queryLines": [
+        "SELECT\r\n",
+        "    transaction_date AS `Date`,\r\n",
+        "    -- 1. Normal trend line (only populated on normal days)\r\n",
+        "    CASE WHEN is_anomaly = false THEN txn_count ELSE NULL END AS `Normal Volume`,\r\n",
+        "    \r\n",
+        "    -- 2. Anomaly points (only populated when an anomaly breaks the threshold)\r\n",
+        "    CASE WHEN is_anomaly = true THEN txn_count ELSE NULL END AS `Anomalous Spike`,\r\n",
+        "    \r\n",
+        "    -- 3. The 7-Day moving baseline\r\n",
+        "    ROUND(rolling_avg_txn_count, 0) AS `7-Day Average`\r\n",
+        "FROM fintech_fraud.gold.anomaly_detection_stats\r\n",
+        "WHERE transaction_date >= CURRENT_DATE() - INTERVAL 30 DAYS\r\n",
+        "ORDER BY transaction_date ASC;"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "c932edb1",
+      "displayName": "Fraud_detect",
+      "layout": [
+        {
+          "widget": {
+            "name": "live-fraud-volume",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "e62caab5",
+                  "fields": [
+                    {
+                      "name": "sum(fraud_amount_inr)",
+                      "expression": "SUM(`fraud_amount_inr`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Fraud Amount INR"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(fraud_amount_inr)",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "INR",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "current-fraud-rate",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "e62caab5",
+                  "fields": [
+                    {
+                      "name": "approx_percentile(fraud_rate_pct, percentage=0)",
+                      "expression": "APPROX_PERCENTILE(`fraud_rate_pct`, 0)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Fraud Rate Percentage"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "approx_percentile(fraud_rate_pct, percentage=0)",
+                  "format": {
+                    "type": "number-percent",
+                    "decimalPlaces": {
+                      "type": "all"
+                    },
+                    "significantFigures": {
+                      "type": "all"
+                    },
+                    "hideGroupSeparator": false
+                  },
+                  "style": {
+                    "rules": [
+                      {
+                        "condition": {
+                          "operand": {
+                            "type": "data-value",
+                            "value": "0.05"
+                          },
+                          "operator": "<"
+                        },
+                        "color": "#00A972"
+                      },
+                      {
+                        "condition": {
+                          "operand": {
+                            "type": "data-value",
+                            "value": "0.05"
+                          },
+                          "operator": ">"
+                        },
+                        "color": {
+                          "themeColorType": "visualizationColors",
+                          "position": 4
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "live-transaction-volume",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "e62caab5",
+                  "fields": [
+                    {
+                      "name": "sum(total_transactions_today)",
+                      "expression": "SUM(`total_transactions_today`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Total Transactions Today"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(total_transactions_today)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "hourly-fraud-trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "bf65ce4a",
+                  "fields": [
+                    {
+                      "name": "txn_minute",
+                      "expression": "`txn_minute`"
+                    },
+                    {
+                      "name": "sum(total_txns)",
+                      "expression": "SUM(`total_txns`)"
+                    },
+                    {
+                      "name": "sum(fraud_txns)",
+                      "expression": "SUM(`fraud_txns`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "mark": {
+                "colors": [
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 2
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 4
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 3
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 4
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 5
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 6
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 7
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 8
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 9
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 10
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Minutely Trends"
+              },
+              "widgetType": "combo",
+              "encodings": {
+                "y": {
+                  "primary": {
+                    "fields": [
+                      {
+                        "fieldName": "sum(total_txns)"
+                      }
+                    ]
+                  },
+                  "secondary": {
+                    "fields": [
+                      {
+                        "fieldName": "sum(fraud_txns)"
+                      }
+                    ]
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "label": {
+                  "show": true
+                },
+                "x": {
+                  "fieldName": "txn_minute",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 6,
+            "height": 8
+          }
+        },
+        {
+          "widget": {
+            "name": "fraud-by-type",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "79476e1e",
+                  "fields": [
+                    {
+                      "name": "sum(fraud_count)",
+                      "expression": "SUM(`fraud_count`)"
+                    },
+                    {
+                      "name": "fraud_type",
+                      "expression": "`fraud_type`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Fraud Type"
+              },
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "sum(fraud_count)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "fraud_type",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 10,
+            "width": 5,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "live-alert-feed",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "fbb40620",
+                  "fields": [
+                    {
+                      "name": "Severity",
+                      "expression": "`Severity`"
+                    },
+                    {
+                      "name": "Amount (₹)",
+                      "expression": "`Amount (₹)`"
+                    },
+                    {
+                      "name": "Confidence (%)",
+                      "expression": "`Confidence (%)`"
+                    },
+                    {
+                      "name": "Alert Time",
+                      "expression": "`Alert Time`"
+                    },
+                    {
+                      "name": "City",
+                      "expression": "`City`"
+                    },
+                    {
+                      "name": "Customer ID",
+                      "expression": "`Customer ID`"
+                    },
+                    {
+                      "name": "Trigger Rule",
+                      "expression": "`Trigger Rule`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Live Alert Feed"
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "Severity",
+                    "style": {
+                      "type": "basic",
+                      "rules": [
+                        {
+                          "condition": {
+                            "operand": {
+                              "type": "data-value",
+                              "value": "CRITICAL"
+                            },
+                            "operator": "="
+                          },
+                          "backgroundColor": {
+                            "themeColorType": "visualizationColors",
+                            "position": 4
+                          },
+                          "foregroundColor": "#680016"
+                        },
+                        {
+                          "condition": {
+                            "operand": {
+                              "type": "data-value",
+                              "value": "HIGH"
+                            },
+                            "operator": "="
+                          },
+                          "backgroundColor": "#FF7709",
+                          "foregroundColor": "#B3500C"
+                        },
+                        {
+                          "condition": {
+                            "operand": {
+                              "type": "data-value",
+                              "value": "MEDIUM"
+                            },
+                            "operator": "="
+                          },
+                          "backgroundColor": "#FCF502",
+                          "foregroundColor": "#97990B"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "fieldName": "Amount (₹)",
+                    "format": {
+                      "type": "number-currency",
+                      "currencyCode": "INR",
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 2
+                      },
+                      "hideGroupSeparator": true
+                    }
+                  },
+                  {
+                    "fieldName": "Confidence (%)",
+                    "format": {
+                      "type": "number-percent",
+                      "decimalPlaces": {
+                        "type": "all"
+                      },
+                      "significantFigures": {
+                        "type": "exact",
+                        "figures": 4
+                      },
+                      "hideGroupSeparator": true
+                    },
+                    "contentAlignment": "center"
+                  },
+                  {
+                    "fieldName": "Alert Time",
+                    "formatTemplate": "{{ @formatted }}"
+                  },
+                  {
+                    "fieldName": "City"
+                  },
+                  {
+                    "fieldName": "Customer ID"
+                  },
+                  {
+                    "fieldName": "Trigger Rule"
+                  }
+                ],
+                "rowOrder": [
+                  {
+                    "by": "column-reversed",
+                    "field": {
+                      "index": 0
+                    }
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 16,
+            "width": 12,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "fintech-fraud-gold",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "bca0ee8d",
+                  "fields": [
+                    {
+                      "name": "Implied Speed (km/h)",
+                      "expression": "`Implied Speed (km/h)`"
+                    },
+                    {
+                      "name": "Travel Route",
+                      "expression": "`Travel Route`"
+                    },
+                    {
+                      "name": "Detected",
+                      "expression": "`Detected`"
+                    },
+                    {
+                      "name": "Minutes Elapsed",
+                      "expression": "`Minutes Elapsed`"
+                    },
+                    {
+                      "name": "Confidence (%)",
+                      "expression": "`Confidence (%)`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Impossible Travel Detections"
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "Implied Speed (km/h)",
+                    "format": {
+                      "type": "number-plain",
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 0
+                      },
+                      "hideGroupSeparator": false
+                    },
+                    "contentAlignment": "center"
+                  },
+                  {
+                    "fieldName": "Travel Route",
+                    "contentAlignment": "center"
+                  },
+                  {
+                    "fieldName": "Detected"
+                  },
+                  {
+                    "fieldName": "Minutes Elapsed"
+                  },
+                  {
+                    "fieldName": "Confidence (%)",
+                    "format": {
+                      "type": "number-percent",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 1
+                      },
+                      "hideGroupSeparator": true
+                    }
+                  }
+                ],
+                "rowOrder": [
+                  {
+                    "by": "column-reversed",
+                    "field": {
+                      "index": 2
+                    }
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 5,
+            "y": 10,
+            "width": 7,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "geographic-fraud-map",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "8047fee1",
+                  "fields": [
+                    {
+                      "name": "total_txns",
+                      "expression": "`total_txns`"
+                    },
+                    {
+                      "name": "mapped_city",
+                      "expression": "`mapped_city`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "mark": {
+                "opacity": 0.69
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Geographic Heat Map"
+              },
+              "widgetType": "choropleth-map",
+              "encodings": {
+                "color": {
+                  "fieldName": "total_txns",
+                  "legend": {
+                    "hide": false,
+                    "position": "right"
+                  },
+                  "scale": {
+                    "type": "quantitative",
+                    "colorRamp": {
+                      "mode": "scheme",
+                      "scheme": "reds"
+                    }
+                  }
+                },
+                "region": {
+                  "regionType": "mapbox-v4-admin",
+                  "admin0": {
+                    "type": "value",
+                    "value": "India",
+                    "geographicRole": "admin0-name"
+                  },
+                  "admin2": {
+                    "fieldName": "mapped_city",
+                    "type": "field",
+                    "geographicRole": "admin2-name"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 6,
+            "height": 8
+          }
+        },
+        {
+          "widget": {
+            "name": "7bd6d414",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "21b40f45",
+                  "fields": [
+                    {
+                      "name": "Total Records",
+                      "expression": "`Total Records`"
+                    },
+                    {
+                      "name": "Current Lag (Minutes)",
+                      "expression": "`Current Lag (Minutes)`"
+                    },
+                    {
+                      "name": "Last Record Arrived",
+                      "expression": "`Last Record Arrived`"
+                    },
+                    {
+                      "name": "Processing Layer",
+                      "expression": "`Processing Layer`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "SLA Tracker"
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "Total Records",
+                    "format": {
+                      "type": "number-plain",
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 0
+                      },
+                      "hideGroupSeparator": false
+                    },
+                    "contentAlignment": "center"
+                  },
+                  {
+                    "fieldName": "Current Lag (Minutes)",
+                    "format": {
+                      "type": "number-plain",
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 0
+                      },
+                      "hideGroupSeparator": true
+                    },
+                    "style": {
+                      "type": "basic",
+                      "rules": [
+                        {
+                          "condition": {
+                            "operand": {
+                              "type": "data-value",
+                              "value": "5"
+                            },
+                            "operator": "<="
+                          },
+                          "backgroundColor": "#00FA3E",
+                          "foregroundColor": "#03704C"
+                        },
+                        {
+                          "condition": {
+                            "operand": {
+                              "type": "data-value",
+                              "value": "15"
+                            },
+                            "operator": "<="
+                          },
+                          "backgroundColor": "#FFE608",
+                          "foregroundColor": "#706309"
+                        },
+                        {
+                          "condition": {
+                            "operand": {
+                              "type": "data-value",
+                              "value": "15"
+                            },
+                            "operator": ">"
+                          },
+                          "backgroundColor": {
+                            "themeColorType": "visualizationColors",
+                            "position": 4
+                          },
+                          "foregroundColor": "#580707"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "fieldName": "Last Record Arrived"
+                  },
+                  {
+                    "fieldName": "Processing Layer"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 28,
+            "width": 7,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "6211b884",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "754208b8",
+                  "fields": [
+                    {
+                      "name": "Overall Status",
+                      "expression": "`Overall Status`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "System Health Status"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "Overall Status",
+                  "style": {
+                    "rules": [
+                      {
+                        "condition": {
+                          "operand": {
+                            "type": "data-value",
+                            "value": "SYSTEM HEALTHY"
+                          },
+                          "operator": "="
+                        },
+                        "color": "#00A972"
+                      },
+                      {
+                        "condition": {
+                          "operand": {
+                            "type": "data-value",
+                            "value": "CRITICAL ALERT"
+                          },
+                          "operator": "="
+                        },
+                        "color": {
+                          "themeColorType": "visualizationColors",
+                          "position": 4
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 7,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "6713a57d",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "4532aee7",
+                  "fields": [
+                    {
+                      "name": "sum(Total Ingested Events)",
+                      "expression": "SUM(`Total Ingested Events`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Throughput Volume"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(Total Ingested Events)",
+                  "format": {
+                    "type": "number-plain",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 10,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "anomaly-detection-stats",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "6bc30ed3",
+                  "fields": [
+                    {
+                      "name": "daily(Date)",
+                      "expression": "DATE_TRUNC(\"DAY\", `Date`)"
+                    },
+                    {
+                      "name": "sum(Anomalous Spike)",
+                      "expression": "SUM(`Anomalous Spike`)"
+                    },
+                    {
+                      "name": "sum(Normal Volume)",
+                      "expression": "SUM(`Normal Volume`)"
+                    },
+                    {
+                      "name": "sum(7-Day Average)",
+                      "expression": "SUM(`7-Day Average`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "frame": {
+                "showTitle": true,
+                "title": "Anomaly Detection Stats"
+              },
+              "mark": {
+                "colors": [
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 4
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 1
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 2
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 5
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 6
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 7
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 8
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 9
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 10
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 10
+                  }
+                ]
+              },
+              "widgetType": "combo",
+              "encodings": {
+                "x": {
+                  "fieldName": "daily(Date)",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "label": {
+                  "show": false
+                },
+                "y": {
+                  "primary": {
+                    "fields": [
+                      {
+                        "fieldName": "sum(Anomalous Spike)"
+                      },
+                      {
+                        "fieldName": "sum(Normal Volume)"
+                      }
+                    ]
+                  },
+                  "secondary": {
+                    "fields": [
+                      {
+                        "fieldName": "sum(7-Day Average)"
+                      }
+                    ]
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 23,
+            "width": 12,
+            "height": 5
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}
