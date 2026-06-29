@@ -3,7 +3,7 @@ import sys
 import os
 
 # Tell Python to look in the transformations/ folder
-sys.path.append(os.path.abspath('/Workspace/Users/nandhuvinoth95@gmail.com/New Pipeline 2026-05-22 22:38/transformations'))
+sys.path.append(os.path.abspath('/Workspace/Repos/nandhuvinoth95@gmail.com/fintech-fraud-detection/Pipeline/transformations'))
 
 import dlt
 from pyspark.sql import functions as F

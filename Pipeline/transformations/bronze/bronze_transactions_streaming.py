@@ -31,7 +31,7 @@ import sys
 import os
 
 # Tell Python to look in the transformations/ folder
-sys.path.append(os.path.abspath('/Workspace/Users/nandhuvinoth95@gmail.com/New Pipeline 2026-05-22 22:38/transformations'))
+sys.path.append(os.path.abspath('/Workspace/Repos/nandhuvinoth95@gmail.com/fintech-fraud-detection/Pipeline/transformations'))
 
 from data_quality.data_quality import BRONZE_EXPECTATIONS, add_audit_columns
 
@@ -96,7 +96,7 @@ def get_pipeline_param(key: str, default: str = "") -> str:
 @dlt.expect_all(BRONZE_EXPECTATIONS)
 def bronze_transactions_raw():
     kafka_bootstrap = get_pipeline_param(
-        "kafka_bootstrap_servers", "oyglh-2001-4490-4eb1-7858-9dc6-eba-5445-7a08.run.pinggy-free.link:42623"
+        "kafka_bootstrap_servers", "tkvub-117-254-32-118.run.pinggy-free.link:37231"
     )
     kafka_topic = get_pipeline_param(
         "kafka_topic_transactions", "fraud.transactions"

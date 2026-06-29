@@ -102,7 +102,7 @@
         "    SUM(CASE WHEN is_fraud THEN 1 ELSE 0 END)         AS fraud_count,\r\n",
         "    SUM(CASE WHEN is_fraud THEN amount ELSE 0 END)    AS fraud_exposure_inr\r\n",
         "FROM fintech_fraud.silver.silver_transactions_unified\r\n",
-        "WHERE event_timestamp >= CURRENT_TIMESTAMP() - INTERVAL 7 DAYS\r\n",
+        "WHERE event_timestamp >= CURRENT_TIMESTAMP() - INTERVAL 30 DAYS\r\n",
         "GROUP BY mapped_city\r\n",
         "ORDER BY fraud_count DESC\r\n",
         "LIMIT 20;"
@@ -661,9 +661,9 @@
                 ],
                 "rowOrder": [
                   {
-                    "by": "column-reversed",
+                    "by": "column",
                     "field": {
-                      "index": 0
+                      "index": 3
                     }
                   }
                 ]
